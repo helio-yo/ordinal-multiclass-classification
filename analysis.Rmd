@@ -235,11 +235,12 @@ The ordinal proportional odds model provides the best trade-off between fit and 
 
 The final model is:
 
-[
+$$
 \log \left( \frac{\mathbb{P}(Y \le j)}{1 - \mathbb{P}(Y \le j)} \right)
-= \beta_0^{(j)} + \beta_1 \text{pared} + \beta_2 \text{public} + \beta_3 \text{gpa},
+= \beta_0^{(j)} + \beta_1 \text{pared}
++ \beta_2 \text{public} + \beta_3 \text{gpa},
 \quad j = 1,2
-]
+$$
 
 Higher GPA and parental graduate education increase the probability of higher interest in graduate studies.
 
