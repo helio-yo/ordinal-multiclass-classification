@@ -1,0 +1,253 @@
+---
+title: "Ordinal and Multinomial Classification of Graduate School Interest"
+author: "Ismael Ruiz Carbajal"
+date: "2025-03-27"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 4,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(dplyr)
+library(ggplot2)
+library(VGAM)
+library(tidyr)
+```
+
+## 1. Introduction
+
+This project analyzes the interest of undergraduate students in applying to graduate school.
+The response variable **apply** has three ordered categories:
+
+* *unlikely*
+* *somewhat likely*
+* *very likely*
+
+We study whether this interest is associated with:
+
+* **public**: type of university (public / private)
+* **pared**: whether at least one parent completed graduate studies
+* **gpa**: current grade point average
+
+Both **multinomial** and **ordinal** generalized linear models are considered.
+
+---
+
+## 2. Data
+
+```{r data}
+Datos <- read.csv("data/Preg5.csv")
+Datos <- Datos[-1]
+
+Datos <- Datos %>%
+  mutate(
+    apply  = factor(apply, levels = c("unlikely", "somewhat likely", "very likely")),
+    pared  = factor(pared, levels = c(0,1), labels = c("No", "Yes")),
+    public = factor(public, levels = c(0,1), labels = c("private", "public"))
+  )
+
+str(Datos)
+summary(Datos)
+```
+
+---
+
+## 3. Exploratory Analysis
+
+### 3.1 Relative Frequencies for Categorical Covariates
+
+```{r relative-frequencies}
+aux <- Datos %>%
+  group_by(pared, public, apply) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(pared, public) %>%
+  mutate(freq = count / sum(count))
+
+ggplot(aux, aes(x = public, y = freq, fill = apply)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  facet_wrap(~ pared) +
+  labs(
+    title = "Relative Frequencies of Graduate School Interest",
+    x = "University Type",
+    y = "Relative Frequency"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+**Interpretation.**
+Interest levels vary across combinations of parental education and university type.
+Students whose parents completed graduate studies tend to show higher interest, particularly among private university students.
+
+---
+
+### 3.2 GPA Distribution by Interest Level
+
+```{r gpa-histogram}
+ggplot(Datos, aes(x = gpa, fill = apply)) +
+  geom_histogram(binwidth = 0.1, alpha = 0.7, color = "black") +
+  facet_wrap(~ apply) +
+  labs(
+    title = "GPA Distribution by Interest Level",
+    x = "GPA",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+**Interpretation.**
+GPA distributions overlap across interest levels, although students with stronger interest show a slight shift toward higher GPA values.
+
+---
+
+## 4. Multinomial Logistic Regression
+
+### 4.1 Model Specification
+
+```{r multinomial-models}
+fit_full <- vglm(
+  apply ~ pared * public * gpa,
+  family = multinomial(refLevel = "unlikely"),
+  data = Datos
+)
+
+fit_reduced <- vglm(
+  apply ~ pared + public + gpa,
+  family = multinomial(refLevel = "unlikely"),
+  data = Datos
+)
+
+fit_null <- vglm(
+  apply ~ 1,
+  family = multinomial(refLevel = "unlikely"),
+  data = Datos
+)
+```
+
+---
+
+### 4.2 Likelihood Ratio Tests
+
+```{r multinomial-tests}
+lrt_null_full <- anova(fit_null, fit_full, type = "I")
+lrt_reduced_full <- anova(fit_reduced, fit_full, type = "I")
+
+lrt_null_full
+lrt_reduced_full
+```
+
+The null model is rejected in favor of the full model.
+However, there is no evidence that interaction terms are necessary.
+
+---
+
+### 4.3 Model Selection via AIC
+
+```{r multinomial-aic}
+data.frame(
+  Model = c("Null", "Reduced", "Full"),
+  AIC = c(AIC(fit_null), AIC(fit_reduced), AIC(fit_full))
+)
+```
+
+The reduced multinomial model achieves the lowest AIC and is selected.
+
+---
+
+## 5. Ordinal Logistic Regression
+
+Given the natural ordering of the response, cumulative logit models are considered.
+
+```{r ordinal-models}
+fit_ord_np <- vglm(
+  apply ~ pared + public + gpa,
+  family = cumulative(parallel = FALSE),
+  data = Datos
+)
+
+fit_ord_p <- vglm(
+  apply ~ pared + public + gpa,
+  family = cumulative(parallel = TRUE),
+  data = Datos
+)
+
+fit_ord_null <- vglm(
+  apply ~ 1,
+  family = cumulative(parallel = FALSE),
+  data = Datos
+)
+```
+
+---
+
+### 5.1 Likelihood Ratio Tests
+
+```{r ordinal-tests}
+anova(fit_ord_null, fit_ord_p, test = "LR", type = "I")
+anova(fit_ord_null, fit_ord_np, test = "LR", type = "I")
+anova(fit_ord_p, fit_ord_np, type = "I")
+```
+
+There is no statistical evidence against the proportional odds assumption.
+
+---
+
+### 5.2 AIC Comparison
+
+```{r ordinal-aic}
+data.frame(
+  Model = c("Ordinal Null", "Proportional Odds", "Non-Proportional"),
+  AIC = c(AIC(fit_ord_null), AIC(fit_ord_p), AIC(fit_ord_np))
+)
+```
+
+The **proportional odds model** is preferred.
+
+---
+
+## 6. Final Model
+
+Comparing the reduced multinomial and proportional odds models:
+
+```{r final-aic}
+data.frame(
+  Model = c("Multinomial (Reduced)", "Ordinal (Proportional Odds)"),
+  AIC = c(AIC(fit_reduced), AIC(fit_ord_p))
+)
+```
+
+The ordinal proportional odds model provides the best trade-off between fit and parsimony.
+
+---
+
+## 7. Model Interpretation
+
+The final model is:
+
+[
+\log \left( \frac{\mathbb{P}(Y \le j)}{1 - \mathbb{P}(Y \le j)} \right)
+= \beta_0^{(j)} + \beta_1 \text{pared} + \beta_2 \text{public} + \beta_3 \text{gpa},
+\quad j = 1,2
+]
+
+Higher GPA and parental graduate education increase the probability of higher interest in graduate studies.
+
+---
+
+## 8. Reproducibility
+
+```{r session-info}
+sessionInfo()
+```
+
